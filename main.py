@@ -75,6 +75,7 @@ def get_reroll_instance(adb_device):
             language=reroll_config.get("language"),
             account_name=reroll_config.get("account_name"),
             max_packs_to_open=reroll_config.get("max_packs_to_open"),
+            check_double_twostar=reroll_config.get("check_double_twostar"),
         )
     else:
         logging.warning(f"Device {adb_device.serial} is not connected")

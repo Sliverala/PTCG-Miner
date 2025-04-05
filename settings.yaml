@@ -11,6 +11,7 @@ reroll:
   language: "Chinese"
   account_name: "SlvGP"
   max_packs_to_open: 4
+  check_double_twostar: false
 adb_ports:
   - "16416"
   - "16448"

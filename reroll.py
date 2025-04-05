@@ -32,6 +32,7 @@ DEFAULT_TIME_OUT = 45
 MAX_FRIEND_TIME_SECOND = 15 * 60
 MAX_WAIT_FRIEND_TIME_SECOND = 15
 DEFAULT_MAX_PACKS_TO_OPEN = 4
+DEFAULT_CHECK_DOUBLE_TWOSTAR = False
 
 
 class RerollState(Enum):
@@ -90,6 +91,7 @@ class Reroll:
         language=DEFAULT_LANGUAGE,
         account_name="SlvGP",
         max_packs_to_open=DEFAULT_MAX_PACKS_TO_OPEN,
+        check_double_twostar=DEFAULT_CHECK_DOUBLE_TWOSTAR,
     ):
         if isinstance(reroll_pack, RerollPack):
             self.reroll_pack = reroll_pack
@@ -117,6 +119,7 @@ class Reroll:
         # 获取设备端口号
         self.adb_port = adb_device.get_serialno().split(":")[-1]
         self.discord_msg = discord_msg
+        self.check_double_twostar = check_double_twostar
 
     def format_log(self, message):
         return f"[127.0.0.1:{self.adb_port}] {message}"
@@ -384,6 +387,7 @@ class Reroll:
         """
         check_need = False
         common_card_num = 0
+        twostar_card_num = 0
         screenshot = self.adb_screenshot()
         for region in BORDER_REGIONS[0:3]:
             if self.image_search(
@@ -395,6 +399,25 @@ class Reroll:
                 break
         is_god_pack = common_card_num == 0
         check_need = True
+        
+        if not is_god_pack and self.check_double_twostar:
+            for region in BORDER_REGIONS[3:5]:
+                if self.image_search(
+                    image_path=self.get_image_path("RainbowFrame"),
+                    screenshot=screenshot,
+                    region=region,
+                ) or self.image_search(
+                    image_path=self.get_image_path("BlackFrame"),
+                    screenshot=screenshot,
+                    region=region,
+                ) or self.image_search(
+                    image_path=self.get_image_path("WhiteFrame"),
+                    screenshot=screenshot,
+                    region=region,
+                ):
+                    twostar_card_num += 1
+        is_double_twostar_pack = twostar_card_num == 2
+        
         two_star_num = 0
         LOGGER.info(self.format_log(f"Found {common_card_num} common cards"))
         if is_god_pack:
@@ -428,6 +451,7 @@ class Reroll:
                     two_star_num += 1
         return (
             is_god_pack,
+            is_double_twostar_pack,
             check_need,
             two_star_num,
             god_pack_screenshot_path if is_god_pack else None,
@@ -542,7 +566,7 @@ class Reroll:
                 delay_ms=110,
             )
             time.sleep(self.delay_ms / 1000)
-            is_god_pack, check_need = False, False
+            is_god_pack, is_double_twostar_pack, check_need = False, False, False
             if pack_num > 1:
                 pack_screenshot = self.adb_screenshot()
                 for border_region in BORDER_REGIONS:
@@ -554,22 +578,25 @@ class Reroll:
                         time.sleep(1)
                         pack_screenshot = self.adb_screenshot()
                 time.sleep(0.5)
-                is_god_pack, check_need, two_star_num, god_pack_screenshot_path = (
+                is_god_pack, is_double_twostar_pack, check_need, two_star_num, god_pack_screenshot_path = (
                     self.rarity_check()
                 )
-            if is_god_pack:
+            if is_god_pack or is_double_twostar_pack:
                 if check_need:
                     self.state = RerollState.FOUNDGP
                 elif self.state != RerollState.FOUNDGP:
                     self.state = RerollState.FOUNDINVALID
                 if self.discord_msg:
+                    if is_god_pack:
+                        message = self.get_god_pack_notification(star_num=two_star_num, pack_num=pack_num, valid=check_need)
+                    else:
+                        message = self.get_double_twostar_pack_notification(pack_num=pack_num, valid=check_need)
                     self.discord_msg.send_message(
-                        self.get_god_pack_notification(
-                            star_num=two_star_num, pack_num=pack_num, valid=check_need
-                        ),
+                        message,
                         screenshot_file=god_pack_screenshot_path,
                         ping=check_need,
                     )
+            
             self.adb_tap(268, 903)
             if pack_num == 1:
                 self.tap_until(
@@ -640,6 +667,14 @@ class Reroll:
             "Found god pack!!\n"
             + f"{self.temp_account_name} ()\n"
             + f"[{star_num if star_num >= 0 else 'X'}/5][{pack_num - 1}P] God pack found in instance: {self.adb_port}\n"
+            + f"{'Valid' if valid else 'Invalid'}"
+        )
+    
+    def get_double_twostar_pack_notification(self, pack_num: int, valid: bool):
+        return (
+            "Double two star found\n"
+            + f"{self.temp_account_name} ()\n"
+            + f"[2x2][{pack_num - 1}P] Double two pack found in instance: {self.adb_port}\n"
             + f"{'Valid' if valid else 'Invalid'}"
         )
 
@@ -979,6 +1014,13 @@ class Reroll:
             if self.reroll_pack == RerollPack.PALKIA:
                 self.adb_tap(422, 529)
         elif self.reroll_pack.series == "A2a":
+            self.tap_until(
+                region=(464, 700, 28, 48),
+                image_name="Point",
+                click_x=420,
+                click_y=312,
+            )
+        elif self.reroll_pack.series == "A2b":
             self.tap_until(
                 region=(464, 700, 28, 48),
                 image_name="Point",
